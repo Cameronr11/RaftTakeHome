@@ -68,3 +68,6 @@ class AgentState(TypedDict):
 
     # Fatal error — if set, graph routes directly to output
     error: Optional[str]
+
+    # Written by output node — the final serialized AgentResponse
+    result: Optional[dict]
