@@ -1,1 +1,3 @@
 RaftProject/
+.env
+__pycache__/
