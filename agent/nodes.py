@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-MAX_TOKENS_PER_CHUNK = 3000   # conservative limit per LLM call
+MAX_TOKENS_PER_CHUNK = 12000   # conservative limit per LLM call
 CHARS_PER_TOKEN      = 4      # standard approximation
 
 # ── LLM client (shared across nodes that need it) ─────────────────────────────
