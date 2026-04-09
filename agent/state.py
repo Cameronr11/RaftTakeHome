@@ -29,9 +29,11 @@ Fields:
                        across retries. Uses a reducer so retries append
                        rather than overwrite.
 
-    retry_count     -- Tracks how many times the LLM parser has been retried.
-                       The conditional edge uses this to decide whether to
-                       retry or give up.
+    retry_count     -- Tracks how many parse attempts have been made this run.
+                       Stored for observability only — routing is determined
+                       by whether any orders were successfully parsed, not
+                       by this value. The actual retry logic lives inside
+                       parse_orders() in services/parser.py.
 
     error           -- Fatal error message. If set, the graph short-circuits
                        directly to the output node rather than continuing.
