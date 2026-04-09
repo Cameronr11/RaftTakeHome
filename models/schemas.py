@@ -97,9 +97,9 @@ class Order(BaseModel):
 
     @model_validator(mode="after")
     def verify_order_id_in_raw(self):
-        if self.raw and self.orderId not in self.raw:
+        if self.raw and not re.search(r'\b' + re.escape(self.orderId) + r'\b', self.raw):
             raise ValueError(
-                f"orderId '{self.orderId}' not found in source text — possible hallucination"
+                f"orderId '{self.orderId}' not found as discrete token in source text — possible hallucination"
             )
         return self
 
