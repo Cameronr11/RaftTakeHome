@@ -18,14 +18,29 @@ Raises:
 
 import os
 import json
+import logging
 import requests
 from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5001")
 TIMEOUT = 10  # seconds
+
+# Candidate envelope keys tried in order when extracting order data from
+# API responses. The first key whose value passes type validation is used.
+# A warning is logged whenever a non-primary key matches so schema drift
+# is visible in logs without failing the request.
+_ORDER_LIST_KEYS = ["raw_orders", "orders", "data", "results", "records"]
+_ORDER_STR_KEYS  = ["raw_order",  "order",  "data", "result",  "record"]
+
+# Minimum length that distinguishes a real order string from a short status
+# value like "ok" (2 chars) or "not_found" (9 chars). Assumption: no valid
+# order string in this system is shorter than 20 characters.
+_MIN_ORDER_STR_LEN = 20
 
 
 class APIClientError(Exception):
@@ -57,13 +72,21 @@ def fetch_orders(limit: Optional[int] = None) -> list[str]:
         response.raise_for_status()
         data = response.json()
 
-        if "raw_orders" not in data:
-            raise APIClientError(
-                f"Unexpected response shape from /api/orders — "
-                f"missing 'raw_orders' key. Got: {list(data.keys())}"
-            )
+        for key in _ORDER_LIST_KEYS:
+            value = data.get(key)
+            if isinstance(value, list) and value and isinstance(value[0], str):
+                if key != _ORDER_LIST_KEYS[0]:
+                    logger.warning(
+                        f"API schema change detected on /api/orders — "
+                        f"expected '{_ORDER_LIST_KEYS[0]}' key, found '{key}'. "
+                        f"Response keys: {list(data.keys())}"
+                    )
+                return value
 
-        return data["raw_orders"]
+        raise APIClientError(
+            f"No usable order list found in /api/orders response. "
+            f"Tried keys: {_ORDER_LIST_KEYS}. Got: {list(data.keys())}"
+        )
 
     except requests.ConnectionError:
         raise APIClientError(
@@ -106,13 +129,21 @@ def fetch_order_by_id(order_id: str) -> str | None:
         response.raise_for_status()
         data = response.json()
 
-        if "raw_order" not in data:
-            raise APIClientError(
-                f"Unexpected response shape from /api/order/{order_id} — "
-                f"missing 'raw_order' key. Got: {list(data.keys())}"
-            )
+        for key in _ORDER_STR_KEYS:
+            value = data.get(key)
+            if isinstance(value, str) and len(value) >= _MIN_ORDER_STR_LEN:
+                if key != _ORDER_STR_KEYS[0]:
+                    logger.warning(
+                        f"API schema change detected on /api/order/{order_id} — "
+                        f"expected '{_ORDER_STR_KEYS[0]}' key, found '{key}'. "
+                        f"Response keys: {list(data.keys())}"
+                    )
+                return value
 
-        return data["raw_order"]
+        raise APIClientError(
+            f"No usable order string found in /api/order/{order_id} response. "
+            f"Tried keys: {_ORDER_STR_KEYS}. Got: {list(data.keys())}"
+        )
 
     except requests.ConnectionError:
         raise APIClientError(
