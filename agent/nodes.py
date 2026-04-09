@@ -88,6 +88,7 @@ Extract values for only these fields:
   limit       : maximum number of results as an integer
   sort_by     : "total", "buyer", or "orderId"
   sort_order  : "asc" or "desc"
+  order_id    : exact numeric order ID digits only e.g. "1003"
 
 ─── RULES ────────────────────────────────────────────────────────────────────
 1. Only populate fields explicitly stated in the query
@@ -100,6 +101,8 @@ Extract values for only these fields:
 8. "top N" or "most expensive N" → sort_by="total", sort_order="desc", limit=N
 9. "cheapest N" or "lowest N"   → sort_by="total", sort_order="asc",  limit=N
 10. If the query has nothing to do with orders → all fields null
+11. "show order XXXX", "get order XXXX", "order #XXXX", "order number XXXX" → order_id="XXXX" (digits only)
+12. "show me N orders" or "list N orders" → limit=N — do NOT populate order_id
 
 ─── EXAMPLES ─────────────────────────────────────────────────────────────────
 Query: "Show me all orders where the buyer was located in Ohio and total \
@@ -117,6 +120,12 @@ Result: buyer_name="Sarah Liu"
 
 Query: "Find orders between $100 and $800"
 Result: min_total=100.0, max_total=800.0
+
+Query: "Show me order 1003"
+Result: order_id="1003"
+
+Query: "What's in order 1001?"
+Result: order_id="1001"
 
 Query: "Show me expensive orders"
 Result: all fields null — no explicit dollar amount
@@ -218,22 +227,51 @@ def api_fetcher_node(
     """
     Fetch raw order strings from the Flask API.
 
-    Calls the appropriate API endpoint based on the FilterSpec. For most
-    queries this means fetching all orders. If the API is unavailable,
-    short-circuits to the output node with a descriptive error.
+    If filter_spec.order_id is set, calls the single-order endpoint via
+    fetch_order_by_id and wraps the result in a one-element list. A 404
+    (None return) is treated as a user-facing "not found" error and
+    short-circuits to output — it is not an APIClientError. For all other
+    queries, fetches the full batch via fetch_orders as before.
 
     Reads:  state["filter_spec"]
     Writes: state["raw_orders"]
-            state["error"] (on API failure only)
+            state["error"] (on API failure or order not found)
     Routes: → context_guard (normal)
-            → output (API failure)
+            → output (API failure or order not found)
     """
-    logger.info("API fetcher: fetching orders from Flask API")
+    filter_spec = state.get("filter_spec")
+    order_id    = filter_spec.order_id if filter_spec else None
+
+    logger.info(
+        f"API fetcher: fetching "
+        f"{'order ' + order_id if order_id else 'all orders'} "
+        f"from Flask API"
+    )
 
     try:
+        if order_id:
+            raw = fetch_order_by_id(order_id)
+            if raw is None:
+                error_msg = (
+                    f"Order {order_id} was not found. "
+                    f"Check that the order ID is correct."
+                )
+                logger.warning(error_msg)
+                return Command(
+                    update={"error": error_msg},
+                    goto="output",
+                )
+            logger.info(
+                f"API fetcher: retrieved order {order_id} "
+                f"via single-order endpoint"
+            )
+            return Command(
+                update={"raw_orders": [raw]},
+                goto="context_guard",
+            )
+
         raw_orders = fetch_orders()
         logger.info(f"API fetcher: retrieved {len(raw_orders)} raw orders")
-
         return Command(
             update={"raw_orders": raw_orders},
             goto="context_guard",

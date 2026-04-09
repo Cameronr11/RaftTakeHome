@@ -123,6 +123,14 @@ class FilterSpec(BaseModel):
     limit: Optional[int] = None
     sort_by: Optional[str] = None      # "total", "buyer", "orderId"
     sort_order: Optional[str] = None   # "asc" or "desc", None means unsorted
+    order_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Exact numeric order ID when the user asks for a specific order. "
+            "Digits only — e.g. '1003' not 'Order 1003'. "
+            "Only populate when the query names a single specific order ID."
+        ),
+    )
 
     @field_validator("state")
     @classmethod
@@ -130,6 +138,16 @@ class FilterSpec(BaseModel):
         if v is None:
             return v
         return v.strip().upper()
+
+    @field_validator("order_id")
+    @classmethod
+    def normalize_order_id(cls, v):
+        if v is None:
+            return v
+        digits = re.sub(r"\D", "", v)
+        if not digits:
+            raise ValueError(f"order_id '{v}' contains no digits")
+        return digits
 
 
 class AgentResponse(BaseModel):
