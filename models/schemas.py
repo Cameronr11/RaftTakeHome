@@ -137,3 +137,4 @@ class AgentResponse(BaseModel):
     query: str
     total_found: int
     error: Optional[str] = None
+    flagged_count: int = 0
