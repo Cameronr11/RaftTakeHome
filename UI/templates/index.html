@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>( RAFT ) Order Intelligence</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23e040fb'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold' font-size='18'%3ER%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0a0a0a;
+            --card-bg: #1a1a1a;
+            --border: #2a2a2a;
+            --magenta: #e040fb;
+            --cyan: #00e5ff;
+            --green: #00e676;
+            --text: #ffffff;
+            --text-dim: #aaaaaa;
+            --text-muted: #666666;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .top-bar { height: 4px; background: var(--magenta); }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 40px;
+            border-bottom: 1px solid var(--border);
+        }
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 0.15em;
+        }
+        .header-right {
+            font-size: 0.8rem;
+            color: var(--magenta);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-weight: 600;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 48px 24px 80px;
+        }
+
+        /* ── Search Section ───────────────────────────────────────── */
+        .search-section { text-align: center; margin-bottom: 48px; }
+        .search-section h1 {
+            font-size: 2.4rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            letter-spacing: -0.02em;
+        }
+        .search-section .subtitle {
+            color: var(--text-dim);
+            font-size: 1.05rem;
+            margin-bottom: 36px;
+        }
+
+        .input-group {
+            display: flex;
+            max-width: 720px;
+            margin: 0 auto 16px;
+        }
+        #queryInput {
+            flex: 1;
+            padding: 16px 20px;
+            font-size: 1rem;
+            font-family: inherit;
+            background: var(--card-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-right: none;
+            border-radius: 4px 0 0 4px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #queryInput:focus { border-color: var(--magenta); }
+        #queryInput::placeholder { color: #555; }
+
+        .search-btn {
+            padding: 16px 36px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            font-family: inherit;
+            letter-spacing: 0.12em;
+            background: var(--magenta);
+            color: #fff;
+            border: none;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .search-btn:hover { opacity: 0.85; }
+        .search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ── Toggle ───────────────────────────────────────────────── */
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 24px;
+            margin-top: 16px;
+        }
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--border);
+            border-radius: 11px;
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .toggle-slider::after {
+            content: '';
+            position: absolute;
+            left: 3px; top: 3px;
+            width: 16px; height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-slider { background: var(--magenta); }
+        .toggle-switch input:checked + .toggle-slider::after { transform: translateX(18px); }
+        .dataset-label { transition: color 0.2s; }
+        .dataset-label.active { color: var(--magenta); }
+
+        /* ── Example Chips ────────────────────────────────────────── */
+        .examples {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 28px;
+        }
+        .example-chip {
+            padding: 8px 16px;
+            font-size: 0.78rem;
+            font-family: inherit;
+            color: var(--text-muted);
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .example-chip:hover {
+            border-color: var(--magenta);
+            color: var(--text);
+        }
+
+        /* ── Loading ──────────────────────────────────────────────── */
+        .loading { text-align: center; padding: 60px 0; }
+        .spinner {
+            width: 40px; height: 40px;
+            margin: 0 auto 16px;
+            border: 3px solid var(--border);
+            border-top-color: var(--magenta);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+        /* ── Results Summary ──────────────────────────────────────── */
+        .results-summary {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .results-summary .count {
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+        .results-summary .count span { color: var(--cyan); }
+        .results-summary .flagged {
+            font-size: 0.85rem;
+            color: var(--magenta);
+            font-weight: 600;
+        }
+        .results-summary .query-echo {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-left: auto;
+            font-style: italic;
+        }
+
+        /* ── Order Grid ───────────────────────────────────────────── */
+        .order-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        /* Bracket-corner card — Raft signature motif */
+        .order-card {
+            --bc: #333;
+            --bs: 16px;
+            --bw: 2px;
+            position: relative;
+            padding: 24px;
+            background:
+                linear-gradient(var(--bc), var(--bc)) 0 0 / var(--bs) var(--bw) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 0 0 / var(--bw) var(--bs) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 100% 0 / var(--bs) var(--bw) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 100% 0 / var(--bw) var(--bs) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 0 100% / var(--bs) var(--bw) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 0 100% / var(--bw) var(--bs) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 100% 100% / var(--bs) var(--bw) no-repeat,
+                linear-gradient(var(--bc), var(--bc)) 100% 100% / var(--bw) var(--bs) no-repeat,
+                var(--card-bg);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .order-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+        }
+        .order-card.flagged { --bc: var(--magenta); }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .order-id {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .flag-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 3px 10px;
+            background: rgba(224, 64, 251, 0.12);
+            color: var(--magenta);
+            border: 1px solid var(--magenta);
+            border-radius: 3px;
+        }
+
+        .buyer-name {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        .location {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        .total {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--cyan);
+            margin-bottom: 14px;
+        }
+        .order-card.flagged .total { color: var(--magenta); }
+
+        .items-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+        .item-tag {
+            font-size: 0.73rem;
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text-dim);
+        }
+
+        .anomaly-section {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+        .anomaly-reason {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.55;
+        }
+
+        /* ── Empty / Error States ─────────────────────────────────── */
+        .empty-state {
+            text-align: center;
+            padding: 48px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state .empty-icon {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+            opacity: 0.4;
+        }
+        .error-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--magenta);
+            font-size: 0.95rem;
+        }
+
+        .hidden { display: none !important; }
+
+        /* ── Responsive ───────────────────────────────────────────── */
+        @media (max-width: 640px) {
+            .search-section h1 { font-size: 1.8rem; }
+            .input-group { flex-direction: column; }
+            #queryInput {
+                border-right: 1px solid var(--border);
+                border-radius: 4px;
+            }
+            .search-btn { border-radius: 4px; margin-top: 8px; }
+            .order-grid { grid-template-columns: 1fr; }
+            header { padding: 16px 20px; }
+            main { padding: 32px 16px 60px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar"></div>
+
+    <header>
+        <div class="logo">( RAFT )</div>
+        <div class="header-right">Order Intelligence Agent</div>
+    </header>
+
+    <main>
+        <section class="search-section">
+            <h1>Query Your Orders</h1>
+            <p class="subtitle">Natural language search powered by AI &mdash; filter, sort, and detect anomalies.</p>
+
+            <form id="queryForm">
+                <div class="input-group">
+                    <input type="text" id="queryInput"
+                           placeholder="Show me all orders in Ohio over $500"
+                           autocomplete="off" />
+                    <button type="submit" class="search-btn" id="searchBtn">SEARCH</button>
+                </div>
+
+                <div class="controls">
+                    <label class="toggle-label">
+                        <span class="toggle-switch">
+                            <input type="checkbox" id="extendedToggle" {% if extended %}checked{% endif %} />
+                            <span class="toggle-slider"></span>
+                        </span>
+                        <span class="dataset-label" id="datasetLabel">Extended dataset (503 orders)</span>
+                    </label>
+                </div>
+            </form>
+
+            <div class="examples">
+                <button type="button" class="example-chip" data-query="Show me all orders">All orders</button>
+                <button type="button" class="example-chip" data-query="Show me all orders in Ohio over $500">Ohio over $500</button>
+                <button type="button" class="example-chip" data-query="Who bought a laptop?">Laptop buyers</button>
+                <button type="button" class="example-chip" data-query="Show me the top 3 most expensive orders">Top 3 expensive</button>
+                <button type="button" class="example-chip" data-query="Orders under $200">Under $200</button>
+            </div>
+        </section>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Agent is processing your query&hellip;</p>
+        </div>
+
+        <div id="errorState" class="error-state hidden"></div>
+
+        <div id="emptyState" class="empty-state hidden">
+            <div class="empty-icon">&#x2014;</div>
+            <p>No orders matched your query.</p>
+        </div>
+
+        <div id="results" class="hidden">
+            <div class="results-summary">
+                <div class="count"><span id="totalCount">0</span> orders found</div>
+                <div class="flagged" id="flaggedInfo"></div>
+                <div class="query-echo" id="queryEcho"></div>
+            </div>
+            <div id="orderGrid" class="order-grid"></div>
+        </div>
+    </main>
+
+    <script>
+        const form        = document.getElementById('queryForm');
+        const input       = document.getElementById('queryInput');
+        const btn         = document.getElementById('searchBtn');
+        const loading     = document.getElementById('loading');
+        const results     = document.getElementById('results');
+        const errorState  = document.getElementById('errorState');
+        const emptyState  = document.getElementById('emptyState');
+        const grid        = document.getElementById('orderGrid');
+        const totalCount  = document.getElementById('totalCount');
+        const flaggedInfo = document.getElementById('flaggedInfo');
+        const queryEcho   = document.getElementById('queryEcho');
+        const extToggle   = document.getElementById('extendedToggle');
+        const dsLabel     = document.getElementById('datasetLabel');
+
+        function updateDatasetLabel() {
+            dsLabel.classList.toggle('active', extToggle.checked);
+        }
+        extToggle.addEventListener('change', updateDatasetLabel);
+        updateDatasetLabel();
+
+        document.querySelectorAll('.example-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                input.value = chip.dataset.query;
+                form.dispatchEvent(new Event('submit'));
+            });
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = input.value.trim();
+            if (!query) return;
+
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+            errorState.classList.add('hidden');
+            emptyState.classList.add('hidden');
+            btn.disabled = true;
+            btn.textContent = 'SEARCHING\u2026';
+
+            try {
+                const resp = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: query,
+                        extended: extToggle.checked
+                    })
+                });
+                const data = await resp.json();
+
+                if (data.error) {
+                    errorState.textContent = data.error;
+                    errorState.classList.remove('hidden');
+                    return;
+                }
+                if (!data.orders || data.orders.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+                renderResults(data);
+            } catch (err) {
+                errorState.textContent = 'Could not reach the agent. Is the server running?';
+                errorState.classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+                btn.disabled = false;
+                btn.textContent = 'SEARCH';
+            }
+        });
+
+        function renderResults(data) {
+            totalCount.textContent = data.total_found;
+            flaggedInfo.textContent = data.flagged_count > 0
+                ? data.flagged_count + ' anomal' + (data.flagged_count === 1 ? 'y' : 'ies') + ' flagged'
+                : '';
+            queryEcho.textContent = '\u201c' + data.query + '\u201d';
+
+            grid.innerHTML = '';
+            data.orders.forEach(order => {
+                const card = document.createElement('div');
+                card.className = 'order-card' + (order.is_flagged ? ' flagged' : '');
+
+                const itemsHtml = (order.items || [])
+                    .map(i => '<span class="item-tag">' + esc(i) + '</span>')
+                    .join('');
+
+                let anomalyHtml = '';
+                if (order.is_flagged && order.reason) {
+                    anomalyHtml =
+                        '<div class="anomaly-section">' +
+                        '<div class="anomaly-reason">' + esc(order.reason) + '</div>' +
+                        '</div>';
+                }
+
+                const loc = (order.city || '') + (order.city && order.state ? ', ' : '') + (order.state || '');
+                const fmtTotal = Number(order.total).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+
+                card.innerHTML =
+                    '<div class="card-header">' +
+                        '<span class="order-id">Order #' + esc(order.orderId) + '</span>' +
+                        (order.is_flagged ? '<span class="flag-badge">Anomaly</span>' : '') +
+                    '</div>' +
+                    '<div class="buyer-name">' + esc(order.buyer) + '</div>' +
+                    '<div class="location">' + esc(loc) + '</div>' +
+                    '<div class="total">$' + fmtTotal + '</div>' +
+                    '<div class="items-list">' + itemsHtml + '</div>' +
+                    anomalyHtml;
+
+                grid.appendChild(card);
+            });
+            results.classList.remove('hidden');
+        }
+
+        function esc(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        input.focus();
+    </script>
+</body>
+</html>

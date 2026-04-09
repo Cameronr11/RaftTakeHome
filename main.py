@@ -2,20 +2,14 @@
 main.py — single-command entry point for the Raft order-query agent.
 
 Usage:
-    python main.py "Show me all orders in Ohio over $500"
-    python main.py --extended "Who bought a laptop?"
+    python main.py                                   Launch the web UI
+    python main.py --extended                        Web UI + extended dataset
+    python main.py "Show me all orders over $500"    CLI mode (JSON output)
+    python main.py --extended "Who bought a laptop?" CLI mode + extended dataset
 
 Flags:
     --extended  Use the 503-order synthetic dataset instead of the
                 6-order Raft-provided dataset.
-
-The agent will:
-    1. Spawn the dummy customer API on port 5001 (if not already running)
-    2. Extract filter intent from the natural-language query
-    3. Fetch raw orders from the Flask API
-    4. Parse unstructured text into structured Order objects via LLM
-    5. Filter / sort results deterministically
-    6. Return clean JSON output
 """
 
 import sys
@@ -117,8 +111,27 @@ def _spawn_api(extended: bool = False) -> None:
     logger.info(f"API subprocess started (pid={proc.pid})")
 
 
+def _launch_ui(extended: bool = False) -> None:
+    """Start the Raft Order Intelligence web UI on port 5000."""
+    import threading
+    import webbrowser
+    from UI.app import create_app
+
+    _kill_port(5000)
+
+    app = create_app(extended=extended)
+    dataset = "Extended (503 orders)" if extended else "Default (6 orders)"
+
+    print(f"\n  ( RAFT ) Order Intelligence Agent")
+    print(f"  Dataset : {dataset}")
+    print(f"  UI      : http://localhost:5000\n")
+
+    threading.Timer(1.5, webbrowser.open, args=["http://localhost:5000"]).start()
+    app.run(host="0.0.0.0", port=5000, debug=False)
+
+
 def main():
-    """CLI entry point — parse args, spawn the API, run the agent."""
+    """CLI entry point — parse args, spawn the API, then launch UI or run a query."""
     extended = "--extended" in sys.argv
     if extended:
         sys.argv.remove("--extended")
@@ -126,8 +139,8 @@ def main():
     _spawn_api(extended=extended)
 
     if len(sys.argv) < 2:
-        print('Usage: python main.py [--extended] "your query here"')
-        sys.exit(1)
+        _launch_ui(extended=extended)
+        return
 
     query = " ".join(sys.argv[1:])
 
