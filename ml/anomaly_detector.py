@@ -25,13 +25,14 @@ Feature engineering:
 
     price_ratio is deliberately excluded as a model feature to prevent
     circular logic between how anomalies were generated and how they
-    are detected. It appears only in human-readable score explanations.
+    are detected.
 
-Statistical model:
-    A linear regression is also trained on the training split to predict
-    expected order total from item category and item count. This satisfies
-    the Raft spec requirement for a traditional statistical model and
-    provides the expected_total baseline shown in anomaly explanations.
+Note: a linear regression was previously included to predict expected_total
+baselines for anomaly explanations. It was removed because sparse training
+data for the "other" category produced nonsensical baselines (e.g. $7,600
+predicted for a coffee maker). The Isolation Forest score and ANOMALY_THRESHOLD
+are the sole detection mechanism. The reason string is now grounded in the
+IF score directly.
 
 Usage:
     # Train (run once after save_parsed_orders.py)
@@ -51,7 +52,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
-from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -77,22 +77,13 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "mobile_devices":  ["tablet", "smartphone", "phone", "smartwatch"],
 }
 
-# Expected price ceiling per category — used ONLY for human readable
-# explanations in score_order(). Never used as a model feature.
-CATEGORY_NORMAL_MAX: dict[str, float] = {
-    "tech_equipment":  3000.0,
-    "peripherals":     500.0,
-    "networking":      2000.0,
-    "audio_visual":    1500.0,
-    "office_supplies": 800.0,
-    "mobile_devices":  1500.0,
-    "other":           2000.0,
-}
-
-CATEGORIES = sorted(CATEGORY_NORMAL_MAX.keys())
+# Sorted list of all categories including "other" — used for one-hot encoding
+# in extract_features(). Derived from CATEGORY_KEYWORDS so adding a new
+# keyword group automatically extends the feature space.
+CATEGORIES = sorted([*CATEGORY_KEYWORDS.keys(), "other"])
 
 # Score threshold above which an order is flagged for review
-ANOMALY_THRESHOLD = 0.6
+ANOMALY_THRESHOLD = 0.60
 
 
 # ── Feature engineering ────────────────────────────────────────────────────────
@@ -162,72 +153,6 @@ def extract_features(orders: list[Order]) -> tuple[np.ndarray, list[str]]:
     return df.values.astype(float), feature_names
 
 
-# ── Linear regression ──────────────────────────────────────────────────────────
-
-def train_regression(orders_train: list[Order]) -> LinearRegression:
-    """
-    Train a linear regression on the training split predicting order
-    total from item category and number of items.
-
-    Trained on the same training split as the Isolation Forest to
-    maintain the same data boundaries and prevent leakage.
-
-    Satisfies the Raft spec requirement for a traditional statistical
-    model. At inference time the regression provides an expected_total
-    baseline shown in anomaly explanations.
-
-    Args:
-        orders_train -- training split Order objects
-
-    Returns:
-        Trained LinearRegression model
-    """
-    rows = []
-    for order in orders_train:
-        category  = categorize_items(order.items or [])
-        num_items = len(order.items) if order.items else 1
-        cat_encoding = {f"cat_{c}": int(c == category) for c in CATEGORIES}
-        rows.append({
-            "num_items": num_items,
-            **cat_encoding,
-            "total": order.total,
-        })
-
-    df = pd.DataFrame(rows)
-    X  = df.drop("total", axis=1).values.astype(float)
-    y  = df["total"].values
-
-    reg = LinearRegression()
-    reg.fit(X, y)
-
-    logger.info(f"Linear regression R² on training split: {reg.score(X, y):.3f}")
-    return reg
-
-
-def predict_expected_total(
-    order: Order,
-    regression: LinearRegression,
-) -> float:
-    """
-    Predict the expected total for an order using the trained regression.
-
-    Used in score_order() to populate the expected_total explanation
-    shown to investigators.
-
-    Args:
-        order      -- Order object to predict for
-        regression -- trained LinearRegression model
-
-    Returns:
-        Predicted total as float, floored at 0
-    """
-    category  = categorize_items(order.items or [])
-    num_items = len(order.items) if order.items else 1
-    cat_encoding = [int(c == category) for c in CATEGORIES]
-    X = np.array([[num_items, *cat_encoding]])
-    return max(float(regression.predict(X)[0]), 0.0)
-
-
 # ── Isolation Forest training ──────────────────────────────────────────────────
 
 def train_isolation_forest(
@@ -280,20 +205,18 @@ def train_isolation_forest(
 def save_model(
     iso_forest: IsolationForest,
     scaler: StandardScaler,
-    regression: LinearRegression,
 ) -> None:
     """Save trained models to ml/anomaly_model.pkl."""
     payload = {
         "iso_forest": iso_forest,
         "scaler":     scaler,
-        "regression": regression,
     }
     with open(MODEL_PATH, "wb") as f:
         pickle.dump(payload, f)
     logger.info(f"Models saved to {MODEL_PATH}")
 
 
-def load_model() -> tuple[IsolationForest, StandardScaler, LinearRegression]:
+def load_model() -> tuple[IsolationForest, StandardScaler]:
     """
     Load trained models from ml/anomaly_model.pkl.
 
@@ -311,7 +234,6 @@ def load_model() -> tuple[IsolationForest, StandardScaler, LinearRegression]:
     return (
         payload["iso_forest"],
         payload["scaler"],
-        payload["regression"],
     )
 
 
@@ -319,14 +241,13 @@ def load_model() -> tuple[IsolationForest, StandardScaler, LinearRegression]:
 
 _iso_forest: Optional[IsolationForest] = None
 _scaler:     Optional[StandardScaler]  = None
-_regression: Optional[LinearRegression] = None
 
 
 def _ensure_loaded() -> None:
     """Load models into module-level cache if not already loaded."""
-    global _iso_forest, _scaler, _regression
+    global _iso_forest, _scaler
     if _iso_forest is None:
-        _iso_forest, _scaler, _regression = load_model()
+        _iso_forest, _scaler = load_model()
 
 
 def score_order(order: Order) -> dict:
@@ -335,29 +256,24 @@ def score_order(order: Order) -> dict:
 
     Loads models on first call and caches for the process lifetime.
     Returns a structured dict with the anomaly score, flag, category,
-    regression baseline, and a human-readable explanation.
-
-    price_ratio and CATEGORY_NORMAL_MAX appear here only to generate
-    the reason string — they played no role in model training.
+    actual total, and a human-readable explanation grounded in the
+    Isolation Forest score and threshold.
 
     Args:
         order -- validated Order object from the agent pipeline
 
     Returns:
         dict with keys:
-            anomaly_score  -- float 0-1, higher = more suspicious
-            is_flagged     -- bool, True if score exceeds threshold
-            category       -- detected item category string
-            expected_total -- regression-predicted baseline total
-            actual_total   -- order.total
-            reason         -- human-readable explanation
+            anomaly_score -- float 0-1, higher = more suspicious
+            is_flagged    -- bool, True if score exceeds threshold
+            category      -- detected item category string
+            actual_total  -- order.total
+            reason        -- human-readable explanation
     """
     try:
         _ensure_loaded()
 
-        category       = categorize_items(order.items or [])
-        expected_total = predict_expected_total(order, _regression)
-        expected_max   = CATEGORY_NORMAL_MAX.get(category, 2000.0)
+        category = categorize_items(order.items or [])
 
         X, _     = extract_features([order])
         X_scaled = _scaler.transform(X)
@@ -367,47 +283,45 @@ def score_order(order: Order) -> dict:
         is_flagged    = anomaly_score > ANOMALY_THRESHOLD
 
         if is_flagged:
-            ratio  = order.total / expected_max
             reason = (
-                f"Order total of ${order.total:,.2f} is {ratio:.1f}x "
-                f"the expected maximum of ${expected_max:,.0f} for "
-                f"{category.replace('_', ' ')}. "
-                f"Regression baseline: ${expected_total:,.2f}."
+                f"Anomaly score {anomaly_score:.3f} exceeds threshold "
+                f"{ANOMALY_THRESHOLD} for {category.replace('_', ' ')} — "
+                f"order total of ${order.total:,.2f} deviates significantly "
+                f"from the normal distribution learned during training."
             )
         else:
             reason = (
-                f"Order total of ${order.total:,.2f} is within normal "
-                f"range for {category.replace('_', ' ')}. "
-                f"Regression baseline: ${expected_total:,.2f}."
+                f"Anomaly score {anomaly_score:.3f} is within normal range "
+                f"(threshold {ANOMALY_THRESHOLD}) for "
+                f"{category.replace('_', ' ')} — "
+                f"order total of ${order.total:,.2f} is consistent with "
+                f"training data."
             )
 
         return {
-            "anomaly_score":  round(anomaly_score, 3),
-            "is_flagged":     is_flagged,
-            "category":       category,
-            "expected_total": round(expected_total, 2),
-            "actual_total":   order.total,
-            "reason":         reason,
+            "anomaly_score": round(anomaly_score, 3),
+            "is_flagged":    is_flagged,
+            "category":      category,
+            "actual_total":  order.total,
+            "reason":        reason,
         }
 
     except FileNotFoundError:
         return {
-            "anomaly_score":  0.0,
-            "is_flagged":     False,
-            "category":       categorize_items(order.items or []),
-            "expected_total": 0.0,
-            "actual_total":   order.total,
-            "reason":         "Anomaly model not trained. Run python -m ml.anomaly_detector.",
+            "anomaly_score": 0.0,
+            "is_flagged":    False,
+            "category":      categorize_items(order.items or []),
+            "actual_total":  order.total,
+            "reason":        "Anomaly model not trained. Run python -m ml.anomaly_detector.",
         }
     except Exception as e:
         logger.error(f"Scoring failed for order {order.orderId}: {e}")
         return {
-            "anomaly_score":  0.0,
-            "is_flagged":     False,
-            "category":       "unknown",
-            "expected_total": 0.0,
-            "actual_total":   order.total,
-            "reason":         f"Scoring error: {e}",
+            "anomaly_score": 0.0,
+            "is_flagged":    False,
+            "category":      "unknown",
+            "actual_total":  order.total,
+            "reason":        f"Scoring error: {e}",
         }
 
 
@@ -441,7 +355,6 @@ def train_and_evaluate() -> None:
         - Stratified by anomaly label to preserve 90/10 class ratio
         - Isolation Forest trained on normal training orders only
         - Scaler fitted on normal training data only
-        - Linear regression trained on full training split
         - All evaluation on held-out test set only — no data leakage
     """
     logger.info("Loading pre-parsed orders from parsed_orders.json...")
@@ -510,10 +423,6 @@ def train_and_evaluate() -> None:
         f"{int((y_test==1).sum())} anomalous)"
     )
 
-    # train linear regression on full training split
-    logger.info("Training linear regression...")
-    regression = train_regression(orders_train)
-
     # train Isolation Forest on normal training orders only
     normal_mask   = y_train == 0
     X_train_clean = X_train[normal_mask]
@@ -542,7 +451,7 @@ def train_and_evaluate() -> None:
     )
 
     # save models
-    save_model(iso_forest, scaler, regression)
+    save_model(iso_forest, scaler)
 
     # print report
     print("\n" + "=" * 60)
@@ -556,7 +465,6 @@ def train_and_evaluate() -> None:
     print(f"  Test:             {len(orders_test)} orders (held out)")
     print(f"\nTraining approach:  Semi-supervised")
     print(f"  IF trained on:    {X_train_clean.shape[0]} normal orders only")
-    print(f"  Regression on:    {len(orders_train)} full training split")
     print(f"\nFeatures:           {feature_names}")
     print(f"  Note: price_ratio excluded — prevents circular logic")
     print(f"        between data generation and anomaly detection")
@@ -582,26 +490,22 @@ def train_and_evaluate() -> None:
         test_orders = list(orders_test)
 
         for idx in top_idx:
-            o       = test_orders[idx]
-            cat     = categorize_items(o.items or [])
-            exp_max = CATEGORY_NORMAL_MAX.get(cat, 2000.0)
-            ratio   = o.total / exp_max
-            score   = anomaly_scores[idx]
-            known   = labels.get(o.orderId, False)
-            tag     = "KNOWN ANOMALY" if known else "flagged"
+            o     = test_orders[idx]
+            score = anomaly_scores[idx]
+            known = labels.get(o.orderId, False)
+            tag   = "KNOWN ANOMALY" if known else "flagged"
             print(
                 f"  Order {o.orderId}: "
                 f"{', '.join(o.items or [])} — "
                 f"${o.total:,.2f} — "
-                f"score: {score:.3f} — "
-                f"{ratio:.1f}x expected — [{tag}]"
+                f"score: {score:.3f} — [{tag}]"
             )
     else:
         print("  No orders flagged in test set.")
 
     print("=" * 60)
     print(f"Model saved to {MODEL_PATH}")
-    print("Next: integrate score_orders() into agent output node.")
+    print("Next: run python main.py to test anomaly scoring.")
 
 
 if __name__ == "__main__":
