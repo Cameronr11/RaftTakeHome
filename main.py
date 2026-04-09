@@ -55,7 +55,7 @@ def run(query: str) -> dict:
         "parse_errors": [],
         "retry_count": 0,
         "error": None,
-        "output": None,
+        "result": None,
     }
 
     # invoke the graph
