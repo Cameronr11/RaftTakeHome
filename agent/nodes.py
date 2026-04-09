@@ -422,15 +422,16 @@ def output_node(state: AgentState) -> dict:
 
     Always runs regardless of whether earlier nodes succeeded or failed.
     If state["error"] is set, returns an error response with an empty
-    orders list. Otherwise serializes filtered_orders using to_output()
-    and wraps in an AgentResponse.
+    orders list. Otherwise serializes filtered_orders, scores each one
+    for anomalies, and wraps everything in an AgentResponse.
 
-    This node is the single exit point for all graph execution paths —
-    success, partial success, and failure all produce consistent JSON.
+    Anomaly scoring is best-effort — if the model is not trained or
+    scoring fails, orders are returned without anomaly data rather
+    than failing the entire response.
 
     Reads:  state["filtered_orders"], state["query"],
             state["parse_errors"], state["error"]
-    Writes: nothing — terminal node
+    Writes: state["result"]
     Routes: → END (always)
     """
     query           = state.get("query", "")
@@ -444,27 +445,58 @@ def output_node(state: AgentState) -> dict:
             orders=[],
             query=query,
             total_found=0,
+            flagged_count=0,
             error=error,
         )
-    else:
-        output_orders = [o.to_output() for o in filtered_orders]
+        return {"result": response.model_dump()}
 
-        if parse_errors:
-            logger.warning(
-                f"Output node: {len(parse_errors)} parse errors "
-                f"occurred during this run"
-            )
-
-        response = AgentResponse(
-            orders=output_orders,
-            query=query,
-            total_found=len(output_orders),
-            error=None,
-        )
-
+    # score each order for anomalies
+    try:
+        from ml.anomaly_detector import score_orders
+        anomaly_scores = score_orders(filtered_orders)
         logger.info(
-            f"Output node: returning {len(output_orders)} orders "
-            f"for query '{query}'"
+            f"Output node: scored {len(filtered_orders)} orders "
+            f"for anomalies"
         )
+    except Exception as e:
+        logger.warning(f"Anomaly scoring unavailable: {e}")
+        anomaly_scores = [{}] * len(filtered_orders)
+
+    # merge order data with anomaly scores
+    output_orders = []
+    flagged_count = 0
+
+    for order, anomaly in zip(filtered_orders, anomaly_scores):
+        order_dict = order.to_output()
+        if anomaly:
+            order_dict.update(anomaly)
+            if anomaly.get("is_flagged"):
+                flagged_count += 1
+        output_orders.append(order_dict)
+
+    if parse_errors:
+        logger.warning(
+            f"Output node: {len(parse_errors)} parse errors "
+            f"occurred during this run"
+        )
+
+    if flagged_count > 0:
+        logger.warning(
+            f"Output node: {flagged_count} orders flagged as "
+            f"potentially anomalous"
+        )
+
+    response = AgentResponse(
+        orders=output_orders,
+        query=query,
+        total_found=len(output_orders),
+        flagged_count=flagged_count,
+        error=None,
+    )
+
+    logger.info(
+        f"Output node: returning {len(output_orders)} orders "
+        f"for query '{query}' ({flagged_count} flagged)"
+    )
 
     return {"result": response.model_dump()}
