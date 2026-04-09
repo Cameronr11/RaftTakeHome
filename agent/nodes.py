@@ -26,19 +26,18 @@ Dependencies:
     models/schemas.py     -- Order, FilterSpec, AgentResponse
 """
 
-import os
 import json
 import logging
 from typing import Literal
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import Command
 
 from agent.state import AgentState
 from models.schemas import FilterSpec, AgentResponse
 from services.api_client import fetch_orders, fetch_order_by_id, APIClientError
+from services.llm import build_llm
 from services.parser import parse_orders
 from services.filters import apply_filters
 
@@ -52,15 +51,7 @@ CHARS_PER_TOKEN      = 4      # standard approximation
 
 # ── LLM client (shared across nodes that need it) ─────────────────────────────
 
-def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        model=os.getenv("MODEL_NAME", "openai/gpt-oss-120b:exacto"),
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        base_url=os.getenv("OPENROUTER_BASE_URL"),
-        temperature=0,
-    )
-
-_llm = _build_llm()
+_llm = build_llm()
 
 # ── Query planner prompt ───────────────────────────────────────────────────────
 

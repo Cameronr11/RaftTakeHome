@@ -29,7 +29,6 @@ Functions:
                                      validated orders and any error messages.
 """
 
-import os
 import logging
 from typing import Optional
 
@@ -39,6 +38,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import ValidationError
 
 from models.schemas import Order, OrderExtract
+from services.llm import build_llm
 
 load_dotenv()
 
@@ -68,22 +68,6 @@ class ParseError(Exception):
 
 
 # ─── LLM and Chain Construction ───────────────────────────────────────────────
-
-def _build_llm() -> ChatOpenAI:
-    """
-    Construct the ChatOpenAI client pointed at OpenRouter.
-    Reads configuration from environment variables loaded from .env.
-
-    Returns:
-        Configured ChatOpenAI instance.
-    """
-    return ChatOpenAI(
-        model=os.getenv("MODEL_NAME", "openai/gpt-oss-120b:exacto"),
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        base_url=os.getenv("OPENROUTER_BASE_URL"),
-        temperature=0,  # deterministic extraction — no creativity needed
-    )
-
 
 def _build_chain(llm: ChatOpenAI):
     """
@@ -149,7 +133,7 @@ Output:
 
 
 # Build once at module load — reused across all parse calls
-_llm = _build_llm()
+_llm = build_llm()
 _chain = _build_chain(_llm)
 
 
