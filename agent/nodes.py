@@ -54,7 +54,7 @@ CHARS_PER_TOKEN      = 4      # standard approximation
 
 def _build_llm() -> ChatOpenAI:
     return ChatOpenAI(
-        model=os.getenv("MODEL_NAME"),
+        model=os.getenv("MODEL_NAME", "openai/gpt-oss-120b:exacto"),
         api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url=os.getenv("OPENROUTER_BASE_URL"),
         temperature=0,
