@@ -20,6 +20,8 @@ import atexit
 import time
 from pathlib import Path
 
+import psutil
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -61,26 +63,31 @@ def run(query: str) -> dict:
 
 
 def _kill_port(port: int = 5001) -> None:
-    """Kill whatever process is listening on the given port (Windows)."""
+    """Kill whatever process is listening on the given port (cross-platform).
+
+    Uses psutil so this works identically on Windows, Linux, and macOS.
+    On Linux, psutil.net_connections() may require elevated privileges when
+    inspecting connections owned by other users — for self-spawned processes
+    (which is all this function is ever called for) standard user permissions
+    are sufficient.
+    """
+    killed = False
     try:
-        result = subprocess.run(
-            ["netstat", "-ano"],
-            capture_output=True, text=True, timeout=5,
-        )
-        pids = set()
-        for line in result.stdout.splitlines():
-            if f":{port}" in line and "LISTENING" in line:
-                pids.add(line.strip().split()[-1])
-        for pid in pids:
-            logger.info(f"Killing process {pid} on port {port}")
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", pid],
-                capture_output=True, timeout=5,
-            )
-        if pids:
-            time.sleep(1)
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
+                try:
+                    proc = psutil.Process(conn.pid)
+                    logger.info(
+                        f"Killing process {conn.pid} ({proc.name()}) on port {port}"
+                    )
+                    proc.kill()
+                    killed = True
+                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                    logger.warning(f"Could not kill pid {conn.pid} on port {port}: {e}")
     except Exception as e:
-        logger.warning(f"Could not kill process on port {port}: {e}")
+        logger.warning(f"Could not enumerate connections on port {port}: {e}")
+    if killed:
+        time.sleep(1)
 
 
 def _spawn_api(extended: bool = False) -> None:

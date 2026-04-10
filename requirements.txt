@@ -8,3 +8,4 @@ scikit-learn==1.6.1
 numpy==2.2.4
 pandas==2.2.3
 python-dotenv==1.1.0
+psutil>=5.9.0
