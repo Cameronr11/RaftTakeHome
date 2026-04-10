@@ -67,7 +67,6 @@ LABELS_PATH  = ML_DIR / "anomaly_labels.json"
 MODEL_PATH   = ML_DIR / "anomaly_model.pkl"
 
 # ── Item category definitions ──────────────────────────────────────────────────
-
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "tech_equipment":  ["laptop", "desktop", "monitor", "server", "computer", "pc", "gaming"],
     "peripherals":     ["mouse", "keyboard", "webcam", "headphones", "hdmi", "cable", "usb", "hub", "microphone"],
@@ -82,7 +81,8 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
 # keyword group automatically extends the feature space.
 CATEGORIES = sorted([*CATEGORY_KEYWORDS.keys(), "other"])
 
-# Score threshold above which an order is flagged for review
+# The rationale for .60 is because we want to flag orders that the model has more confidence in being anomalous. In order to reduce analyst review time
+# We are prioritizing precision over recall here.
 ANOMALY_THRESHOLD = 0.60
 
 
@@ -137,7 +137,7 @@ def extract_features(orders: list[Order]) -> tuple[np.ndarray, list[str]]:
 
     for order in orders:
         category  = categorize_items(order.items or [])
-        num_items = len(order.items) if order.items else 1
+        num_items = len(order.items) if order.items else 0
 
         cat_encoding = {f"cat_{c}": int(c == category) for c in CATEGORIES}
 
@@ -279,6 +279,8 @@ def score_order(order: Order) -> dict:
         X_scaled = _scaler.transform(X)
 
         raw_score     = _iso_forest.decision_function(X_scaled)[0]
+        # decision_function returns ~[-0.5, +0.5]: positive=normal, negative=anomalous.
+        # Invert and shift to [0,1] so 1.0 = most anomalous. Clip handles rare out-of-range values.
         anomaly_score = float(np.clip(1 - (raw_score + 0.5), 0, 1))
         is_flagged    = anomaly_score > ANOMALY_THRESHOLD
 
