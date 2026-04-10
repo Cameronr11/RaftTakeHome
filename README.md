@@ -1,136 +1,185 @@
-# Procurement order agent — Raft AI engineer challenge
+# Raft Order Intelligence Agent
 
-This repository is a submission for Raft’s AI engineer coding challenge: a **LangGraph** agent that accepts natural language, calls a dummy Flask API returning **unstructured** order text, uses an LLM to recover **structured** records, and returns **clean JSON**. The baseline problem is messy-ingestion plus reliable filtering; the submission also adds **semi-supervised anomaly detection** so every result set can surface orders that look like procurement fraud (for example, a mouse pad priced like specialized hardware).
+A LangGraph-powered AI agent that accepts natural-language procurement queries, fetches unstructured order data from a REST API, parses and validates it using an LLM with structured outputs, applies deterministic Python filters, and returns clean JSON — with every result scored by a trained Isolation Forest for procurement fraud detection.
 
----
-
-## Overview
-
-Government-scale procurement often means millions of legacy records that never agreed on one string format. The agent mirrors that reality: the LLM is responsible only for **interpretation** (query intent and per-order parsing). **Filtering, sorting, and limiting** are ordinary Python on typed models, so the same query yields the same structured outcome regardless of non-determinism in the model. **Anomaly scoring** uses a trained Isolation Forest in the output step (deterministic given the model artifact) and is best-effort if the model is missing.
-
-At runtime the agent talks to the **original** `dummy_customer_api.py` from the challenge. A separate extended dataset and API exist only for training and evaluation of the fraud-detection model; the canonical API file is treated as fixed.
+Built by Cameron Rader as a submission for the Raft AI Engineer take-home challenge.
 
 ---
 
-## Quick start (under five minutes)
-
-**Prerequisites:** Python 3.10+, an [OpenRouter](https://openrouter.ai/) API key. The specified model `openai/gpt-oss-120b:exacto` works on the free tier; if you need a key, Raft suggests contacting `mlteam@teamraft.com`.
+## Quick Start
 
 ```bash
-python -m venv RaftProject
-# Windows:
-.\RaftProject\Scripts\activate
-# macOS/Linux:
-# source RaftProject/bin/activate
-
+python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+python main.py
 ```
 
-Set `OPENROUTER_API_KEY` in a `.env` file at the repo root (or export it in your shell). Optional: `OPENROUTER_BASE_URL` if you use a custom gateway.
+That's it. The agent, the API, and the UI all start with one command. A browser window opens automatically at `http://localhost:5000`.
 
-**Terminal 1 — API**
+> **Note:** A `.env` file is included in this submission with a pre-configured OpenRouter API key. Place it in the project root if it isn't already there.
 
+---
+
+## Run Modes
+
+### Web UI — Datasets chosen by toggle (6 orders, 503 orders)
 ```bash
-python dummy_customer_api.py
+python main.py
 ```
+Launches the Raft Order Intelligence UI at `http://localhost:5000`. Uses the 6-order baseline dataset provided in the challenge spec.
 
-**Terminal 2 — query**
+---
 
+### CLI Mode — Single Query
 ```bash
-python main.py "Show me all orders in Ohio over $500"
+python main.py "Show me all orders where the buyer was in Ohio and total was over 500"
 python main.py "Who bought a laptop?"
-python main.py "Show me the top 2 most expensive orders"
+python main.py "Show me the top 3 most expensive orders"
+python main.py "Show me order 1003"
 ```
-
-The Ohio / $500 example is the clearest **anomaly demo**: order **1006** (mouse pad at **$8,750**) should appear in the result set and be flagged for review.
-
----
-
-## Architecture overview
-
-The agent is a compiled **LangGraph** graph: each transition is named, and important paths log state movement. That matters in regulated settings—you can point to *which* step produced *which* decision. The LLM is constrained with **LangChain `with_structured_output()`** against **Pydantic** schemas; validators enforce plausible fields (for example, `orderId` must appear in the original raw string, which blocks a common hallucination class). A fuller text diagram and node table live in [`architecture.md`](architecture.md); wiring is in `agent/graph.py` and `agent/nodes.py`.
+Runs a single query and prints clean JSON to stdout. No UI required.
 
 ---
 
-## Above and beyond: fraud-oriented anomaly detection
-
-Retrieval answers *what matches the query*; the ML layer asks *which of those matches look wrong*. The scenario is deliberately grounded in procurement fraud patterns—ordinary catalog items with systematically inflated totals. The detector is an **Isolation Forest** trained in a **semi-supervised** way: **only normal orders** were used for fitting, which matches production where labeled fraud is scarce. **`price_ratio` is not used as a feature**, so the model is not tuned to echo how synthetic anomalies were generated. Training uses a **stratified 80/20 train/test split** so the roughly **10%** anomaly rate is preserved in both halves.
-
-**Held-out evaluation** (503 orders: 453 normal, 50 anomalous, **9.9%** rate; train/test stratified; Isolation Forest fit on **362** normal training rows only):
-
-| Metric | Value |
-|--------|--------|
-| Precision | **0.909** |
-| Recall | **1.000** |
-| F1 | **0.952** |
-| False negatives (test) | **0** |
-
----
-
-## Design decisions
-
-**LangGraph instead of a single chain** — The graph makes control flow explicit and loggable. For defense-adjacent workflows, “we ran a script” is weaker than “we transitioned through these named steps with this state.”
-
-**Two LLM roles only** — (1) `query_planner_node`: natural language → `FilterSpec`. (2) `llm_parser_node`: raw string → `Order`. Everything downstream is deterministic Python, which is the main lever for **correctness and determinism** in the final JSON.
-
-**Structured output + Pydantic** — Binding the model to schemas prevents free-form replies; validators catch bad IDs, states, and totals before filtering runs.
-
-**Hallucination defense** — Each `Order` retains the source `raw` text; a model validator requires the extracted `orderId` to appear in that string. On a 503-order parse experiment, **four** invented IDs were attempted and **all** were rejected at validation time.
-
-**Deterministic filtering** — `FilterSpec` is applied with typed `Order` objects and set/logic-style operations in Python, not by asking the model to “filter again.”
-
-**Extended data without touching the supplied API** — Synthetic data and labels live under `ml/`; the extended Flask server is optional. The challenge `dummy_customer_api.py` stays the contract for normal runs.
-
----
-
-## Running the ML pipeline (optional)
-
-Generate the 503-order synthetic set (four string format families to stress the parser), parse it through the same LLM pipeline used by the agent, then train and evaluate the Isolation Forest:
-
+### CLI Mode — Extended Dataset
 ```bash
-python ml/data_generator.py
-python -m ml.save_parsed_orders
-python -m ml.anomaly_detector
+python main.py --extended "Show me orders flagged as anomalous"
+python main.py --extended "Find orders over $5000"
 ```
+CLI query against the 503-order dataset with full anomaly scoring.
 
-To serve the extended JSON over HTTP (for experiments only):
+---
 
-```bash
-python dummy_customer_extended_api.py
+## What the Agent Does
+
+1. **Parses natural language** — Extracts structured filter intent (state, price range, item keyword, buyer name, sort order, etc.) from the user's query using `with_structured_output(FilterSpec)`
+2. **Fetches raw data** — Calls the Flask order API, which returns deliberately unstructured text in inconsistent formats
+3. **Parses and validates** — LLM extracts each order into a typed Pydantic schema; a model validator cross-checks the extracted order ID against the raw source string to catch hallucinations at the code level
+4. **Filters deterministically** — A pure Python layer applies the extracted filters (no LLM involved in filtering, sorting, or limiting)
+5. **Scores for fraud** — Every returned order is scored by a pre-trained Isolation Forest. Suspicious orders are flagged with a score, category, and explanation
+6. **Returns clean JSON** — Always returns a consistent `AgentResponse` envelope whether the query succeeded, returned zero results, or hit an error
+
+### Example Output
+
+```json
+{
+  "orders": [
+    {
+      "orderId": "1003",
+      "buyer": "Mike Turner",
+      "city": "Cleveland",
+      "state": "OH",
+      "total": 1299.99,
+      "items": ["gaming pc", "mouse"],
+      "anomaly_score": 0.312,
+      "is_flagged": false,
+      "category": "tech_equipment",
+      "reason": "Anomaly score 0.312 is within normal range..."
+    }
+  ],
+  "query": "Show me orders in Ohio",
+  "total_found": 3,
+  "flagged_count": 0,
+  "error": null
+}
 ```
 
 ---
 
-## Project structure
+## ML: Procurement Fraud Detection
+
+The system includes a production-style anomaly detection pipeline built entirely offline — no LLM calls required at training time.
+
+### Model
+**Isolation Forest** (scikit-learn) trained semi-supervised on normal orders only. The model learns what legitimate procurement looks like; deviations at inference time produce elevated anomaly scores.
+
+### Data Pipeline
+1. `ml/data_generator.py` — Generates 503 synthetic orders via LLM (temp=0.9) in deliberately inconsistent formats, with ~10% containing anomalous price patterns
+2. `ml/save_parsed_orders.py` — Runs all strings through the agent's LLM parser and serializes validated `Order` objects to JSON (run once; output committed)
+3. `ml/anomaly_detector.py` — Stratified 80/20 train/test split, trains on normal orders only, evaluates on held-out test set
+
+### Training Design Choices
+- **Semi-supervised:** Model never sees anomalous orders during training — it learns the normal distribution and flags deviations
+- **No leakage:** `StandardScaler` fitted on training data only; test set is strictly held out
+- **Features:** `total`, `num_items`, and a 7-class one-hot category encoding (`tech_equipment`, `peripherals`, `networking`, etc.)
+- **`price_ratio` excluded:** Deliberately omitted to avoid circular reasoning between how anomalies were generated and how they are detected
+- **Threshold (0.60):** Set above the IF decision boundary (0.50) — requires meaningful confidence before flagging. Precision-first: the cost of a false positive is analyst review time
+
+### Held-Out Test Set Performance
+| Metric | Score |
+|--------|-------|
+| Precision | 0.909 |
+| Recall | 1.000 |
+| F1 | 0.952 |
+
+> The trained model (`ml/anomaly_model.pkl`) is included in this submission. No training step is required to run the demo.
+
+---
+
+## Architecture
+
+The agent is built as a deterministic LangGraph pipeline with six named nodes. For the full architecture diagram, node-by-node data flow, schema design, LLM constraint rationale, and edge case handling details:
+
+**→ See [`architecture.md`](architecture.md)**
+
+---
+
+## Project Structure
 
 ```
-.
-├── main.py                      # CLI entry: python main.py "<query>"
-├── dummy_customer_api.py        # Original Raft API (unstructured text)
-├── dummy_customer_extended_api.py  # Optional: serves ml/extended_orders.json
-├── architecture.md              # Text diagram + node summary
+RaftTakeHome/
+├── main.py                          # Single entry point — starts everything
+├── dummy_customer_api.py            # Raft-provided baseline API (6 orders)
+├── dummy_customer_extended_api.py   # Extended API (503 orders, auto-spawned with --extended)
+├── requirements.txt                 # Pinned dependencies
+├── architecture.md                  # Full agent architecture and design notes
+│
 ├── agent/
-│   ├── graph.py                 # LangGraph topology and compilation
-│   ├── nodes.py                 # Planner, fetch, parse, filter, output
-│   ├── state.py                 # Agent state type
-│   └── tools.py                 # Tool definitions used by the graph
+│   ├── graph.py     # StateGraph wiring — purely structural, no business logic
+│   ├── nodes.py     # Six node functions + conditional routing
+│   └── state.py     # AgentState TypedDict
+│
 ├── models/
-│   └── schemas.py               # Order, FilterSpec, structured LLM contracts
+│   └── schemas.py   # OrderExtract, Order, FilterSpec, AgentResponse (Pydantic)
+│
 ├── services/
-│   ├── api_client.py            # HTTP client for the dummy API
-│   ├── filters.py               # Deterministic FilterSpec application
-│   └── parser.py                # LLM parsing helpers
-└── ml/
-    ├── data_generator.py        # Builds extended_orders.json + labels
-    ├── extended_orders.json     # Synthetic raw strings (committed)
-    ├── anomaly_labels.json      # Ground truth for ML eval (not exposed via API)
-    ├── save_parsed_orders.py    # Batch parse → parsed_orders.json
-    ├── parsed_orders.json       # Parsed orders for training (generated)
-    └── anomaly_detector.py      # Train Isolation Forest, print metrics
+│   ├── llm.py        # Single source of truth for the ChatOpenAI client
+│   ├── api_client.py # HTTP wrapper with schema-drift detection
+│   ├── parser.py     # LLM extraction, hallucination checks, retry logic
+│   └── filters.py    # Deterministic filter, sort, and limit — no LLM
+│
+├── ml/
+│   ├── data_generator.py      # Synthetic dataset generation
+│   ├── save_parsed_orders.py  # Offline parse → JSON (run once)
+│   ├── anomaly_detector.py    # Isolation Forest training and runtime scoring
+│   ├── extended_orders.json   # 503 raw order strings
+│   ├── parsed_orders.json     # Pre-parsed Order objects
+│   ├── anomaly_labels.json    # Ground truth labels (evaluation only)
+│   └── anomaly_model.pkl      # Trained model — included, no training needed
+│
+└── UI/
+    ├── app.py                 # Flask frontend (factory pattern)
+    └── templates/
+        └── index.html         # Single-page UI
 ```
 
 ---
 
-## Original challenge (summary)
+## Configuration
 
-Raft’s prompt asked for a real agent: natural language in → call messy API → LLM structuring → JSON out, with attention to context limits, hallucinations, and schema drift; **LangChain or LangGraph**; model **`openai/gpt-oss-120b:exacto`** via OpenRouter; logging and error handling; one-command run (`python main.py`). This implementation meets those constraints and adds the traditional ML layer described above.
+The `.env` file is included in this submission and is pre-configured. If you need to create it manually:
+
+```
+OPENROUTER_API_KEY=your_key_here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+MODEL_NAME=openai/gpt-oss-120b:exacto
+API_BASE_URL=http://localhost:5001
+```
+
+---
+
+## Requirements
+
+- Python 3.10+
+- All dependencies pinned in `requirements.txt`
+- No Docker, no database, no external services beyond the OpenRouter API key
