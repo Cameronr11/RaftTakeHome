@@ -18,12 +18,16 @@ python main.py
 
 That's it. The agent, the API, and the UI all start with one command. A browser window opens automatically at `http://localhost:5000`.
 
+> **macOS note:** Port 5000 is reserved by AirPlay Receiver on macOS Monterey and later. If the app fails to open, disable it in **System Settings → General → AirDrop & Handoff**.
+
 > **Note:** The `.env` file has been excluded from github submission for safety reasons, however during Tuesday meeting can be committed for a brief period of time.
-> To create your own, simply use the format below with an openrouter api key and the .env file format below:
-  OPENROUTER_API_KEY=your_api_key
-  OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-  MODEL_NAME=openai/gpt-oss-120b:exacto
-  API_BASE_URL=http://localhost:5001 
+> To create your own, simply use the format below with an OpenRouter API key:
+> ```
+> OPENROUTER_API_KEY=your_api_key
+> OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+> MODEL_NAME=openai/gpt-oss-120b:exacto
+> API_BASE_URL=http://localhost:5001
+> ```
 
 ---
 
