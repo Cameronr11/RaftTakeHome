@@ -49,7 +49,7 @@ class APIClientError(Exception):
 
 
 
-#Function 1 to gather orders from flask server
+
 def fetch_orders(limit: Optional[int] = None) -> list[str]:
     """
     Fetch raw order strings from GET /api/orders.
@@ -104,7 +104,7 @@ def fetch_orders(limit: Optional[int] = None) -> list[str]:
         raise APIClientError(f"Invalid JSON response from /api/orders: {e}")
 
 
-#Function 2 to gather order by id from flask server
+
 def fetch_order_by_id(order_id: str) -> str | None:
     """
     Fetch a single raw order string from GET /api/order/<order_id>.

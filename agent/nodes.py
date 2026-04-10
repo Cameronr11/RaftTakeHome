@@ -137,7 +137,7 @@ _planner_chain = (
 # ── ORDER-RELATED KEYWORDS ─────────────────────────────────────────────────────
 # Used to detect genuinely out-of-scope queries after the planner returns
 # an all-null FilterSpec.
-
+# Item and location terms (laptop, coffee, seattle, etc.) provide coverage
 _ORDER_KEYWORDS = {
     "order", "orders", "buyer", "buyers", "total", "item", "items",
     "purchase", "purchased", "bought", "show", "find", "list", "get",
