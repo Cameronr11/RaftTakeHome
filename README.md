@@ -9,7 +9,7 @@ Built by Cameron Rader as a submission for the Raft AI Engineer take-home challe
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-username/RaftTakeHome.git
+git clone https://github.com/Cameronr11/RaftTakeHome.git
 cd RaftTakeHome
 python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
