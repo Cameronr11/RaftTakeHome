@@ -13,21 +13,22 @@ START
 query_planner_node
   │ LLM: with_structured_output(FilterSpec)
   │ Extracts: state, min_total, max_total, item_keyword,
-  │           buyer_name, limit, sort_by, sort_order
+  │           buyer_name, limit, sort_by, sort_order, order_id
   │
   ├──(out-of-scope query)──► output_node ──► END
   │
   ▼
 api_fetcher_node
   │ HTTP GET → Flask API (localhost:5001)
-  │ Returns raw unstructured order strings
+  │ If order_id set: calls single-order endpoint
+  │ Otherwise: fetches full order list
   │
-  ├──(API unavailable)──► output_node ──► END
+  ├──(API error / order not found)──► output_node ──► END
   │
   ▼
 context_guard_node
-  │ Token estimate (~4 chars/token); truncate if > 3000 tokens
-  │ (Compliance path; 5-order default set does not hit this.)
+  │ Token estimate (~4 chars/token); truncate if > 12,000 tokens
+  │ (6-order default set does not hit this; extended 503-order set does.)
   │
   ▼
 llm_parser_node
@@ -77,7 +78,7 @@ END → JSON
 
 **Order** — Internal, fully validated record. Validators enforce numeric `orderId`, two-letter `state`, currency-stripped `total`, and **hallucination defense**: promoted from `OrderExtract` only if `orderId` appears in the stored raw source string (code-level check, not prompt pleading). `to_output()` strips internals before serialization.
 
-**FilterSpec** — Structured intent from the planner: optional `state`, `min_total`, `max_total`, `item_keyword`, `buyer_name`, `limit`, `sort_by`, `sort_order`. Empty spec means “return everything parsed.”
+**FilterSpec** — Structured intent from the planner: optional `state`, `min_total`, `max_total`, `item_keyword`, `buyer_name`, `limit`, `sort_by`, `sort_order`, `order_id`. When `order_id` is set the API fetcher calls the single-order endpoint directly. Empty spec means return everything parsed.
 
 **AgentResponse** — Uniform envelope for success and failure; includes `flagged_count` from the anomaly detector.
 
@@ -96,7 +97,7 @@ class OrderExtract(BaseModel):
 class FilterSpec(BaseModel):
     state: Optional[str] = None
     min_total: Optional[float] = None
-    # item_keyword, buyer_name, limit, sort_by, sort_order
+    # item_keyword, buyer_name, limit, sort_by, sort_order, order_id
 ```
 
 ---
@@ -109,24 +110,22 @@ class FilterSpec(BaseModel):
 | API fetch | No | HTTP client |
 | Context guard | No | Token math + truncation |
 | Raw string → `Order` | Yes | Unstructured text; resilient to format drift |
-| Filter / sort / limit | **No** | Deterministic, testable, no non-reproducible “SQL in prose” |
+| Filter / sort / limit | **No** | Deterministic, testable, no non-reproducible "SQL in prose" |
 | Anomaly scoring | No | Loaded sklearn models |
 
-**Why filtering is Python, not LLM:** The user’s constraints become executable predicates. Same `FilterSpec` + same `parsed_orders` always yield the same subset and ordering—critical for correctness reviews and regression tests.
+**Why filtering is Python, not LLM:** The user's constraints become executable predicates. Same `FilterSpec` + same `parsed_orders` always yield the same subset and ordering — critical for correctness reviews and regression tests.
 
-**Why `OrderExtract` ≠ `Order`:** The LLM gets a flat, prompt-friendly schema; the app owns validation, normalization, and anti-hallucination rules in one place (`Order`), without polluting the extraction prompt with validator error messages.
+**Why `OrderExtract` != `Order`:** The LLM gets a flat, prompt-friendly schema; the app owns validation, normalization, and anti-hallucination rules in one place (`Order`), without polluting the extraction prompt with validator error messages.
 
 ---
 
 ## ML layer (offline training, runtime inference)
 
-Two artifacts trained offline and loaded at runtime:
+**Isolation Forest (semi-supervised)** — Trained on **normal orders only** (~362 of the training split), mirroring production where fraud labels are scarce. Features: `total`, `num_items`, category one-hot (7 categories). **`price_ratio` is excluded** to avoid circularity with synthetic data generation. Flag when `anomaly_score > 0.6`.
 
-1. **Linear regression** — Satisfies the “traditional predictive system” stretch: features = item category (one-hot) + `num_items`; target = order total. Provides an `expected_total`-style baseline for explanations alongside anomaly scores. Trained on the full training split (402 orders).
+A linear regression was evaluated as an additional "expected total" baseline but was removed — sparse training data for the "other" category produced nonsensical predictions (e.g. $7,600 for a coffee maker). The Isolation Forest score is the sole detection mechanism.
 
-2. **Isolation Forest (semi-supervised)** — Trained on **normal orders only** (362), mirroring production where fraud labels are scarce. Features: `total`, `num_items`, category one-hot (7 categories). **`price_ratio` is excluded** to avoid circularity with synthetic data generation. Flag when `anomaly_score > 0.6`.
-
-**Offline pipeline (no LLM at train time):** `data_generator.py` → synthetic strings → `save_parsed_orders.py` (through the agent parse path) → JSON → `anomaly_detector.py` (stratified 80/20 split, train, evaluate).
+**Offline pipeline (no LLM at train time):** `data_generator.py` → synthetic strings → `save_parsed_orders.py` (through the agent parse path) → JSON → `anomaly_detector.py` (stratified 80/20 split, train on normal only, evaluate on held-out test set).
 
 **Held-out test metrics (no leakage):** precision 0.909, recall 1.000, F1 0.952.
 
@@ -174,7 +173,7 @@ User NL query
 
 ## Raft spec edge cases
 
-**Context window overflow** — `context_guard_node` estimates tokens before parsing and truncates the order list to a ~3000-token budget. Each order is parsed in its own structured-output call so no single invocation scales with unbounded concatenated context.
+**Context window overflow** — `context_guard_node` estimates tokens before parsing and truncates the order list to a 12,000-token budget. Each order is parsed in its own structured-output call so no single invocation scales with unbounded concatenated context.
 
 **Model hallucination** — After `OrderExtract` is produced, promotion to `Order` runs a **model validator** that requires `orderId` to appear in the original raw string. Mismatches are rejected before filtering. (Example: 4 hallucination attempts observed over a 503-order run; all rejected.)
 
@@ -187,10 +186,9 @@ User NL query
 ```
 RaftTakeHome/
 ├── main.py                          # Entry: python main.py "<query>"
-├── dummy_customer_api.py            # Raft-provided API (baseline)
+├── dummy_customer_api.py            # Raft-provided API (baseline, 6 orders)
 ├── dummy_customer_extended_api.py   # Extended API serving 503 orders
 ├── requirements.txt                 # Pinned dependencies
-├── requirements.lock                # Resolved dependency tree
 ├── .env                             # API keys (local, not committed)
 ├── architecture.md                  # This document
 ├── README.md                        # Setup and usage
@@ -198,25 +196,25 @@ RaftTakeHome/
 ├── agent/
 │   ├── graph.py     # StateGraph wiring + compile
 │   ├── nodes.py     # Six nodes + conditional routing
-│   ├── state.py     # AgentState TypedDict
-│   └── tools.py     # LangChain @tool wrappers for the API client
+│   └── state.py     # AgentState TypedDict
 │
 ├── models/
 │   └── schemas.py   # OrderExtract, Order, FilterSpec, AgentResponse
 │
 ├── services/
-│   ├── api_client.py # HTTP client for Flask
+│   ├── llm.py        # Single source of truth for the ChatOpenAI client
+│   ├── api_client.py # HTTP client for Flask with schema-drift detection
 │   ├── parser.py     # LLM extraction + hallucination checks / retries
 │   └── filters.py    # Deterministic filter, sort, limit
 │
 └── ml/
     ├── data_generator.py      # Synthetic orders (LLM-assisted generation)
     ├── save_parsed_orders.py  # Offline parse → JSON
-    ├── anomaly_detector.py    # Isolation Forest + linear regression, I/O
+    ├── anomaly_detector.py    # Isolation Forest training and runtime scoring
     ├── extended_orders.json   # 503 raw strings
     ├── parsed_orders.json     # Pre-parsed orders
     ├── anomaly_labels.json    # Ground truth for evaluation
-    └── anomaly_model.pkl      # Serialized trained models (generate via trainer)
+    └── anomaly_model.pkl      # Trained model — included, no training needed
 ```
 
-Logging and error handling live at node boundaries and in services so failures (API down, parse exhaustion, planner “out of scope”) still terminate in `output_node` with a consistent `AgentResponse` shape.
+Logging and error handling live at node boundaries and in services so failures (API down, parse exhaustion, planner "out of scope") still terminate in `output_node` with a consistent `AgentResponse` shape.
