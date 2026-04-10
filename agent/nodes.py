@@ -26,7 +26,7 @@ Dependencies:
     models/schemas.py     -- Order, FilterSpec, AgentResponse
 """
 
-import json
+
 import logging
 from typing import Literal
 
@@ -290,9 +290,11 @@ def context_guard_node(state: AgentState) -> dict:
 
     Estimates the token count of raw order strings using the standard
     4-chars-per-token heuristic. If the total exceeds MAX_TOKENS_PER_CHUNK,
-    truncates the list and logs a warning. For the current dataset of 5
+    truncates the list and logs a warning. For the current dataset of 6
     orders this will never trigger, but the guard must exist to satisfy the
-    edge case requirement in the Raft spec.
+    edge case requirement in the Raft spec. Whereas with the extended dataset,
+    this guard will be triggered. MAX_TOKENS_PER_CHUNK can be manipulated
+    to handle increased or decreased extended dataset size.
 
     Reads:  state["raw_orders"]
     Writes: state["raw_orders"] (potentially truncated)
