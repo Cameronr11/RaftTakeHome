@@ -4,21 +4,10 @@ models/schemas.py
 Pydantic data models defining the contracts for the agent pipeline.
 
 Classes:
-    OrderExtract  -- Lightweight LLM-facing extraction model. Used exclusively
-                     with with_structured_output(). No validators, no raw field.
-                     Field descriptions are sent to the LLM as part of the prompt.
-
-    Order         -- A single parsed customer order. Validates field types,
-                     normalizes state codes, strips currency symbols from totals,
-                     and cross-checks the extracted orderId against the raw source
-                     string to catch LLM hallucinations.
-
-    FilterSpec    -- Structured representation of a natural language query's intent.
-                     Produced by the query planner and consumed by the filter layer
-                     to deterministically select and sort matching orders.
-
-    AgentResponse -- Final output envelope. Always returned regardless of success
-                     or failure so the caller receives consistent JSON structure.
+    OrderExtract: Forced Contract for 2nd LLM call
+    Order: Internal, fully validated record created using the OrderExtract class.
+    FilterSpec: Forced Contract for 1st LLM call
+    AgentResponse: Final agentic response object
 """
 
 from pydantic import BaseModel, Field, field_validator, model_validator
