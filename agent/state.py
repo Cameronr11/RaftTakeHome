@@ -1,13 +1,13 @@
 """
 agent/state.py
 
-Defines the shared state object that flows between every node in the
-LangGraph agent. Think of this as the working memory of the entire
-agent run — every node reads from it and writes back to it.
-
-Each field is only included here because it genuinely needs to persist
-across node boundaries. Local variables that a node computes and uses
-internally are not in state.
+This State.py file defines the working memory of the entire LangGraph pipeline. 
+The agent's state persists across node boundaries — nodes don't talk to each other directly, 
+they communicate by reading from and writing to this shared object. Without it, nodes would have to pass 
+data directly to each other and errors would have to be handled in a spiderweb of function arguments. 
+Instead, any node can set state['error'] and the graph routes globally to the output node. AgentState is a 
+TypedDict rather than a Pydantic model because nodes return partial updates — only the fields they changed,
+and Pydantic would require all fields present to validate, which would fail on every partial write
 
 Fields:
     query           -- The original natural language query. Set once at

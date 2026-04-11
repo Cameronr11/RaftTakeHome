@@ -1,9 +1,12 @@
 """
 agent/graph.py
 
-Assembles and compiles the LangGraph StateGraph for the order query agent.
-This file is purely structural — it imports node functions, registers them,
-and defines the edges between them. No business logic lives here.
+Assembles and compiles the LangGraph for the order query agent.
+This purpose here is to define the exection order and routing rules
+for the nodes in the graph. This decides which node runs next and
+under which conditions. Build graph has fixed edges, each node always
+routes to the same next node(s). 3 of the nodes use command-based routing,
+to point to the output node if an error occurs(QueryPlanner, ApiFetcher, LlmParser)
 
 Graph topology:
 
