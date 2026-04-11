@@ -30,6 +30,8 @@ Dependencies:
 import logging
 from typing import Literal
 
+import tiktoken
+
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import Command
@@ -47,7 +49,11 @@ logger = logging.getLogger(__name__)
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 MAX_TOKENS_PER_CHUNK = 12000   # conservative limit per LLM call
-CHARS_PER_TOKEN      = 4      # standard approximation
+
+# cl100k_base is the base encoding for all GPT-4 family models.
+# Using the base encoding rather than a specific model name so this
+# works regardless of which OpenRouter model is configured at runtime.
+_tokenizer = tiktoken.get_encoding("cl100k_base")
 
 # ── LLM client (shared across nodes that need it) ─────────────────────────────
 
@@ -288,13 +294,13 @@ def context_guard_node(state: AgentState) -> dict:
     """
     Protect against context window overflow before the LLM parser runs.
 
-    Estimates the token count of raw order strings using the standard
-    4-chars-per-token heuristic. If the total exceeds MAX_TOKENS_PER_CHUNK,
-    truncates the list and logs a warning. For the current dataset of 6
-    orders this will never trigger, but the guard must exist to satisfy the
-    edge case requirement in the Raft spec. Whereas with the extended dataset,
-    this guard will be triggered. MAX_TOKENS_PER_CHUNK can be manipulated
-    to handle increased or decreased extended dataset size.
+    Counts exact tokens using tiktoken (cl100k_base encoding, compatible
+    with all GPT-4 family models). If the total exceeds MAX_TOKENS_PER_CHUNK,
+    truncates the list greedily from the front and logs a warning. For the
+    current dataset of 6 orders this will never trigger, but the guard must
+    exist to satisfy the edge case requirement in the Raft spec. With the
+    extended dataset this guard will be triggered. MAX_TOKENS_PER_CHUNK can
+    be adjusted to handle increased or decreased extended dataset size.
 
     Reads:  state["raw_orders"]
     Writes: state["raw_orders"] (potentially truncated)
@@ -306,24 +312,22 @@ def context_guard_node(state: AgentState) -> dict:
         logger.warning("Context guard: no raw orders to process")
         return {"raw_orders": []}
 
-    total_chars = sum(len(r) for r in raw_orders)
-    estimated_tokens = total_chars // CHARS_PER_TOKEN
+    token_counts = [len(_tokenizer.encode(r)) for r in raw_orders]
+    total_tokens = sum(token_counts)
 
     logger.info(
         f"Context guard: {len(raw_orders)} orders, "
-        f"~{estimated_tokens} estimated tokens"
+        f"{total_tokens} tokens"
     )
 
-    if estimated_tokens > MAX_TOKENS_PER_CHUNK:
-        # calculate how many orders fit within the token budget
-        budget_chars = MAX_TOKENS_PER_CHUNK * CHARS_PER_TOKEN
+    if total_tokens > MAX_TOKENS_PER_CHUNK:
         kept = []
         used = 0
-        for raw in raw_orders:
-            if used + len(raw) > budget_chars:
+        for raw, count in zip(raw_orders, token_counts):
+            if used + count > MAX_TOKENS_PER_CHUNK:
                 break
             kept.append(raw)
-            used += len(raw)
+            used += count
 
         logger.warning(
             f"Context guard: truncated from {len(raw_orders)} to "
