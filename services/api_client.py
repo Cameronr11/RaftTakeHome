@@ -30,16 +30,13 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5001")
 TIMEOUT = 10  # seconds
 
-# Candidate envelope keys tried in order when extracting order data from
-# API responses. The first key whose value passes type validation is used.
-# A warning is logged whenever a non-primary key matches so schema drift
-# is visible in logs without failing the request.
+#whole point of these is just to make sure, in the case of schema drift, the api client can still function.
+#If the api changes the key from raw_orders to orders, the api client will still function.
 _ORDER_LIST_KEYS = ["raw_orders", "orders", "data", "results", "records"]
 _ORDER_STR_KEYS  = ["raw_order",  "order",  "data", "result",  "record"]
 
-# Minimum length that distinguishes a real order string from a short status
-# value like "ok" (2 chars) or "not_found" (9 chars). Assumption: no valid
-# order string in this system is shorter than 20 characters.
+#This makes sure that we dont accidentally grab partial orders or status messages within the larger order string.
+#Every valid raw order string is going to have at least 20 characters.
 _MIN_ORDER_STR_LEN = 20
 
 

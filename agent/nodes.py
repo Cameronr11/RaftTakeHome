@@ -222,7 +222,7 @@ def api_fetcher_node(
     state: AgentState,
 ) -> Command[Literal["context_guard", "output"]]:
     """
-    Fetch raw order strings from the Flask API.
+    Fetch raw order strings from the Flask API. Api_client.py: fetch_orders() and fetch_order_by_id()
 
     If filter_spec.order_id is set, calls the single-order endpoint via
     fetch_order_by_id and wraps the result in a one-element list. A 404
@@ -346,7 +346,7 @@ def llm_parser_node(
     state: AgentState,
 ) -> Command[Literal["filter_validate", "output"]]:
     """
-    Parse raw unstructured order strings into validated Order objects.
+    Parse raw unstructured order strings into validated Order objects. Essentially, just the agents wrapper around the parser.py file.
 
     Calls parse_orders() from services/parser.py which handles individual
     order parsing, hallucination detection, and per-order retries internally.
