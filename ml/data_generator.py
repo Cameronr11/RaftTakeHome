@@ -47,8 +47,9 @@ logger = logging.getLogger(__name__)
 # ── Output paths ───────────────────────────────────────────────────────────────
 
 ML_DIR            = Path(__file__).parent
-ORDERS_PATH       = ML_DIR / "extended_orders.json"
-LABELS_PATH       = ML_DIR / "anomaly_labels.json"
+DATA_DIR          = ML_DIR / "data"
+ORDERS_PATH       = DATA_DIR / "extended_orders.json"
+LABELS_PATH       = DATA_DIR / "anomaly_labels.json"
 
 # ── LLM client ─────────────────────────────────────────────────────────────────
 
@@ -337,8 +338,8 @@ def save_dataset(
     strings: list[str],
     labels: dict[str, bool],
 ) -> None:
-    """Save generated strings and labels to ml/ directory."""
-    ML_DIR.mkdir(parents=True, exist_ok=True)
+    """Save generated strings and labels to ml/data/ directory."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     with open(ORDERS_PATH, "w") as f:
         json.dump(strings, f, indent=2)

@@ -62,9 +62,10 @@ logger = logging.getLogger(__name__)
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
 ML_DIR       = Path(__file__).parent
-PARSED_PATH  = ML_DIR / "parsed_orders.json"
-LABELS_PATH  = ML_DIR / "anomaly_labels.json"
-MODEL_PATH   = ML_DIR / "anomaly_model.pkl"
+DATA_DIR     = ML_DIR / "data"
+PARSED_PATH  = DATA_DIR / "parsed_orders.json"
+LABELS_PATH  = DATA_DIR / "anomaly_labels.json"
+MODEL_PATH   = DATA_DIR / "anomaly_model.pkl"
 
 # ── Item category definitions ──────────────────────────────────────────────────
 CATEGORY_KEYWORDS: dict[str, list[str]] = {

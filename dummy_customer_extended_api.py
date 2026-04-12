@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 # ── Load extended dataset ──────────────────────────────────────────────────────
 
-ORDERS_PATH = Path(__file__).parent / "ml" / "extended_orders.json"
+ORDERS_PATH = Path(__file__).parent / "ml" / "data" / "extended_orders.json"
 
 try:
     with open(ORDERS_PATH) as f:

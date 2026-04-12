@@ -22,8 +22,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ML_DIR         = Path(__file__).parent
-ORDERS_PATH    = ML_DIR / "extended_orders.json"
-PARSED_PATH    = ML_DIR / "parsed_orders.json"
+DATA_DIR       = ML_DIR / "data"
+ORDERS_PATH    = DATA_DIR / "extended_orders.json"
+PARSED_PATH    = DATA_DIR / "parsed_orders.json"
 
 
 def main():
