@@ -28,7 +28,7 @@ api_fetcher_node
   ▼
 context_guard_node
   │ Token estimate (~4 chars/token); truncate if > 12,000 tokens
-  │ (6-order default set does not hit this; extended 503-order set does.)
+  │ (6-order default set does not hit this; extended ~200-order demo set does.)
   │
   ▼
 llm_parser_node
@@ -175,7 +175,7 @@ User NL query
 
 **Context window overflow** — `context_guard_node` estimates tokens before parsing and truncates the order list to a 12,000-token budget. Each order is parsed in its own structured-output call so no single invocation scales with unbounded concatenated context.
 
-**Model hallucination** — After `OrderExtract` is produced, promotion to `Order` runs a **model validator** that requires `orderId` to appear in the original raw string. Mismatches are rejected before filtering. (Example: 4 hallucination attempts observed over a 503-order run; all rejected.)
+**Model hallucination** — After `OrderExtract` is produced, promotion to `Order` runs a **model validator** that requires `orderId` to appear in the original raw string. Mismatches are rejected before filtering. (Example: 4 hallucination attempts observed over a full extended-dataset run; all rejected.)
 
 **Unpredictable API / text formats** — Parsing is LLM-based rather than brittle regex. The extended synthetic set deliberately mixes formats (e.g. standard `Buyer=` lines, pipe-separated rows, `Amount=` / `Products:` variants, `Customer=` instead of `Buyer=`); all were parsed successfully in testing.
 
@@ -187,7 +187,7 @@ User NL query
 RaftTakeHome/
 ├── main.py                          # Entry: python main.py "<query>"
 ├── dummy_customer_api.py            # Raft-provided API (baseline, 6 orders)
-├── dummy_customer_extended_api.py   # Extended API serving 503 orders
+├── dummy_customer_extended_api.py   # Extended API serving demo dataset (~200 orders)
 ├── requirements.txt                 # Pinned dependencies
 ├── .env                             # API keys (local, not committed)
 ├── architecture.md                  # This document

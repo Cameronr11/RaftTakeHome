@@ -5,7 +5,20 @@ Serves a single-page Raft-themed UI at ``/`` and exposes ``POST /api/query``
 for the JavaScript client.  All heavy lifting is delegated to ``main.run()``.
 """
 
+import json
+from pathlib import Path
+
 from flask import Flask, render_template, request, jsonify
+
+_DEMO_PATH = Path(__file__).parent.parent / "ml" / "data" / "demo_orders.json"
+
+
+def _demo_order_count() -> int:
+    """Return the number of orders in the demo dataset, or 0 if not generated yet."""
+    try:
+        return len(json.loads(_DEMO_PATH.read_text()))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return 0
 
 
 def create_app(extended: bool = False) -> Flask:
@@ -19,7 +32,11 @@ def create_app(extended: bool = False) -> Flask:
 
     @app.route("/")
     def index():
-        return render_template("index.html", extended=app.config["EXTENDED"])
+        return render_template(
+            "index.html",
+            extended=app.config["EXTENDED"],
+            extended_count=_demo_order_count(),
+        )
 
     @app.route("/api/query", methods=["POST"])
     def query_endpoint():

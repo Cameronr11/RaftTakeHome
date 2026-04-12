@@ -33,7 +33,7 @@ That's it. The agent, the API, and the UI all start with one command. A browser 
 
 ## Run Modes
 
-### Web UI — Datasets chosen by toggle (6 orders, 503 orders)
+### Web UI — Datasets chosen by toggle (6 orders default, ~200 order demo)
 ```bash
 python main.py
 ```
@@ -57,7 +57,7 @@ Runs a single query and prints clean JSON to stdout. No UI required.
 python main.py --extended "Show me orders flagged as anomalous"
 python main.py --extended "Find orders over $5000"
 ```
-CLI query against the 503-order dataset with full anomaly scoring.
+CLI query against the extended demo dataset with full anomaly scoring.
 
 ---
 
@@ -141,7 +141,7 @@ The agent is built as a deterministic LangGraph pipeline with six named nodes. F
 RaftTakeHome/
 ├── main.py                          # Single entry point — starts everything
 ├── dummy_customer_api.py            # Raft-provided baseline API (6 orders)
-├── dummy_customer_extended_api.py   # Extended API (503 orders, auto-spawned with --extended)
+├── dummy_customer_extended_api.py   # Extended API (demo dataset, auto-spawned with --extended)
 ├── requirements.txt                 # Pinned dependencies
 ├── architecture.md                  # Full agent architecture and design notes
 │

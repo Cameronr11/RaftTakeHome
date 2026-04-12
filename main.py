@@ -8,7 +8,7 @@ Usage:
     python main.py --extended "Who bought a laptop?" CLI mode + extended dataset
 
 Flags:
-    --extended  Use the 503-order synthetic dataset instead of the
+    --extended  Use the ~200-order demo dataset instead of the
                 6-order Raft-provided dataset.
 """
 
@@ -127,7 +127,9 @@ def _launch_ui(extended: bool = False) -> None:
     _kill_port(5000)
 
     app = create_app(extended=extended)
-    dataset = "Extended (503 orders)" if extended else "Default (6 orders)"
+    from UI.app import _demo_order_count
+    demo_count = _demo_order_count() if extended else 0
+    dataset = f"Extended ({demo_count} orders)" if extended else "Default (6 orders)"
 
     print(f"\n  ( RAFT ) Order Intelligence Agent")
     print(f"  Dataset : {dataset}")
