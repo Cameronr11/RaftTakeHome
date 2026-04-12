@@ -487,7 +487,7 @@ def output_node(state: AgentState) -> dict:
 
     # score each order for anomalies
     try:
-        from ml.anomaly_detector import score_orders
+        from ml.scorer import score_orders
         anomaly_scores = score_orders(filtered_orders)
         logger.info(
             f"Output node: scored {len(filtered_orders)} orders "

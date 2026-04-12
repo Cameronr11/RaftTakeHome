@@ -107,7 +107,7 @@ The system includes a production-style anomaly detection pipeline built entirely
 ### Data Pipeline
 1. `ml/data_generator.py` — Generates 503 synthetic orders via LLM (temp=0.9) in deliberately inconsistent formats, with ~10% containing anomalous price patterns
 2. `ml/save_parsed_orders.py` — Runs all strings through the agent's LLM parser and serializes validated `Order` objects to JSON (run once; output committed)
-3. `ml/anomaly_detector.py` — Stratified 80/20 train/test split, trains on normal orders only, evaluates on held-out test set
+3. `ml/trainer.py` — Stratified 80/20 train/test split, trains on normal orders only, evaluates on held-out test set
 
 ### Training Design Choices
 - **Semi-supervised:** Model never sees anomalous orders during training — it learns the normal distribution and flags deviations
@@ -123,7 +123,7 @@ The system includes a production-style anomaly detection pipeline built entirely
 | Recall | 1.000 |
 | F1 | 0.952 |
 
-> The trained model (`ml/anomaly_model.pkl`) is included in this submission. No training step is required to run the demo.
+> The trained model (`ml/data/anomaly_model.pkl`) is included in this submission. No training step is required to run the demo.
 
 ---
 
@@ -162,11 +162,15 @@ RaftTakeHome/
 ├── ml/
 │   ├── data_generator.py      # Synthetic dataset generation
 │   ├── save_parsed_orders.py  # Offline parse → JSON (run once)
-│   ├── anomaly_detector.py    # Isolation Forest training and runtime scoring
-│   ├── extended_orders.json   # 503 raw order strings
-│   ├── parsed_orders.json     # Pre-parsed Order objects
-│   ├── anomaly_labels.json    # Ground truth labels (evaluation only)
-│   └── anomaly_model.pkl      # Trained model — included, no training needed
+│   ├── features.py            # Feature engineering and category taxonomy
+│   ├── model_store.py         # Model persistence (save/load)
+│   ├── scorer.py              # Runtime scoring called by the agent
+│   ├── trainer.py             # Isolation Forest training pipeline
+│   └── data/
+│       ├── extended_orders.json   # 503 raw order strings
+│       ├── parsed_orders.json     # Pre-parsed Order objects
+│       ├── anomaly_labels.json    # Ground truth labels (evaluation only)
+│       └── anomaly_model.pkl      # Trained model — included, no training needed
 │
 └── UI/
     ├── app.py                 # Flask frontend (factory pattern)

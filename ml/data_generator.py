@@ -20,10 +20,10 @@ never modified — the extended dataset is served by
 dummy_customer_api_extended.py.
 
 Output:
-    ml/extended_orders.json  -- list of raw order strings
-    ml/anomaly_labels.json   -- maps orderId to is_anomaly boolean
-                                (for model evaluation only, never
-                                exposed through the API)
+    ml/data/extended_orders.json  -- list of raw order strings (~1000)
+    ml/data/anomaly_labels.json   -- maps orderId to is_anomaly boolean
+                                     (for model evaluation only, never
+                                     exposed through the API)
 """
 
 import os
@@ -35,6 +35,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
 
@@ -72,6 +73,16 @@ REAL_ORDER_STRINGS = [
 ]
 
 # ── Generation prompts ─────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = """You are a data engineer building a synthetic dataset for a \
+procurement order anomaly detection system. The system ingests raw unstructured \
+order strings from a customer API, parses them with an LLM, and flags \
+out-of-policy purchases using a trained machine learning model.
+
+Your job is to generate realistic raw order strings exactly as a real customer \
+API would return them — plain text, slightly inconsistent formatting, real US \
+locations, and plausible buyer names. Do not explain, label, or annotate the \
+strings. Return only the raw strings themselves."""
 
 NORMAL_PROMPT = """Generate exactly {count} synthetic procurement order strings.
 
@@ -125,39 +136,43 @@ RULES:
 Return ONLY the raw strings, one per line. No JSON, no numbering,
 no explanation, no markdown."""
 
-ANOMALY_PROMPT = """Generate exactly {count} ANOMALOUS procurement order strings.
-
-These simulate procurement fraud — ordinary items with massively
-inflated prices. The format should match normal orders exactly so
-they are indistinguishable except for the suspicious total.
+ANOMALY_PROMPT = """Generate exactly {count} synthetic procurement order strings that \
+represent out-of-policy purchases. These are orders where the total cost is \
+significantly higher than expected for the items listed.
 
 Use order IDs starting from {start_id}.
 
 Use the STANDARD format only:
 "Order XXXX: Buyer=Name, Location=City, ST, Total=$X.XX, Items: item1, item2"
 
-FRAUD PATTERN — normal mundane items with prices 5-15x higher than normal:
+OUT-OF-POLICY PATTERNS — mix these across the batch:
 
-Normal peripheral ($20-$500) → Anomalous ($2,000-$7,500)
-Examples:
-  "Order XXXX: Buyer=Name, Location=City, ST, Total=$4,250.00, Items: mouse"
-  "Order XXXX: Buyer=Name, Location=City, ST, Total=$3,800.00, Items: keyboard, hdmi cable"
+PATTERN A — High unit cost for low-value items (about 40% of batch):
+Items that normally cost under $500 total appear with totals of $2,500-$8,000.
+Examples of items: mouse, keyboard, hdmi cable, webcam, desk lamp, whiteboard, \
+USB hub, microphone, speaker, headphones
+Example totals for these items: $2,800.00, $4,150.00, $5,600.00, $3,300.00, $7,200.00
 
-Normal office supply ($50-$800) → Anomalous ($3,000-$10,000)
-Examples:
-  "Order XXXX: Buyer=Name, Location=City, ST, Total=$6,500.00, Items: desk lamp"
-  "Order XXXX: Buyer=Name, Location=City, ST, Total=$8,200.00, Items: whiteboard"
+PATTERN B — Bulk quantity of ordinary items (about 30% of batch):
+Normal office or peripheral items ordered in large quantities driving a high total.
+Examples: "mouse, mouse, mouse, mouse, mouse" totaling $1,800.00
+or "keyboard, keyboard, keyboard" totaling $2,100.00
+or "hdmi cable, hdmi cable, hdmi cable, hdmi cable" totaling $1,600.00
+Totals for bulk orders: $1,500.00 - $4,500.00
 
-Normal audio visual ($100-$1,500) → Anomalous ($8,000-$20,000)
-Examples:
-  "Order XXXX: Buyer=Name, Location=City, ST, Total=$15,000.00, Items: microphone"
-  "Order XXXX: Buyer=Name, Location=City, ST, Total=$12,500.00, Items: speaker"
+PATTERN C — Mismatched category and price (about 30% of batch):
+Low-cost category items bundled together reaching an unusually high combined total.
+Examples: office supplies and peripherals combined reaching $5,000-$12,000.
+"desk lamp, mouse, keyboard" — Total: $6,400.00
+"whiteboard, hdmi cable, webcam" — Total: $8,900.00
+"desk lamp, speaker, usb hub" — Total: $5,200.00
 
 RULES:
-- Items must look completely ordinary — the fraud is in the price only
-- Use realistic buyer names and real US cities
-- Vary states across orders
+- Items must be ordinary recognizable products — no made-up items
+- Use realistic full buyer names and real US cities
+- Vary states, buyer names, and cities across all orders
 - Each string on its own line
+- Totals must include cents e.g. $4,250.00 not $4250
 
 Return ONLY the raw strings, one per line. No JSON, no numbering,
 no explanation, no markdown."""
@@ -218,10 +233,15 @@ def _generate_batch(
     Returns list of raw strings or empty list on failure.
     """
     try:
-        label = "anomaly" if is_anomaly else "normal"
+        label = "out-of-policy" if is_anomaly else "normal"
         logger.info(f"Generating {label} batch {batch_num}...")
 
-        response = llm.invoke(prompt)
+        chat_prompt = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM_PROMPT),
+            ("human", prompt),
+        ])
+        chain = chat_prompt | llm
+        response = chain.invoke({})
         content = response.content.strip()
 
         # split on newlines and clean each line
@@ -353,11 +373,12 @@ def save_dataset(
 
 if __name__ == "__main__":
     logger.info("Starting synthetic data generation...")
-    logger.info("~10 LLM calls. Estimated time: 2-3 minutes.")
+    logger.info("~20 LLM calls. Estimated time: 4-6 minutes.")
+    logger.info("Target: ~1000 total orders, ~10% out-of-policy")
 
     strings, labels = generate_dataset(
-        normal_batches=9,
-        anomaly_batches=1,
+        normal_batches=18,
+        anomaly_batches=2,
         batch_size=50,
     )
 
@@ -365,5 +386,5 @@ if __name__ == "__main__":
 
     logger.info("Done.")
     logger.info("Next steps:")
-    logger.info("  1. python dummy_customer_api_extended.py  (start extended API)")
-    logger.info("  2. python ml/anomaly_detector.py          (train model)")
+    logger.info("  1. python -m ml.save_parsed_orders  (parse orders for training)")
+    logger.info("  2. python -m ml.trainer              (train model)")

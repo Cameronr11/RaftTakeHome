@@ -24,7 +24,7 @@ import pytest
 import numpy as np
 
 from models.schemas import Order
-from ml.anomaly_detector import categorize_items, extract_features, CATEGORIES
+from ml.features import categorize_items, extract_features, CATEGORIES
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
